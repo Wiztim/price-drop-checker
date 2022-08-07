@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/csv"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -9,9 +10,9 @@ import (
 )
 
 type OrderInfo struct {
-	timeStr       string  // str representing when order was placed
-	asin          string  // str represnting item number of product
-	originalPrice float32 // float32 representing the cost the item was bought for
+	TimeStr       string  `json:"dateordered"`   // str representing when order was placed
+	Asin          string  `json:"asin"`          // str represnting item number of product
+	OriginalPrice float32 `json;"originalprice"` // float32 representing the cost the item was bought for
 	//TODO: get current price of item currPrice
 }
 
@@ -27,12 +28,10 @@ func New(path string) []OrderInfo {
 	//from the OS file reader, we create a reader for csv
 	r := csv.NewReader(file)
 	r.FieldsPerRecord = 36 // magic number, oops, but this is how many fields are in our CSV
-	orderhist := make([]OrderInfo, 10)
+	orderhist := []OrderInfo{}
 
 	//lets get the headers we care about, noting the first line contains all the field names
-	record, err := r.Read()
-	h1, h2, h3 := record[0], record[4], record[13]
-	fmt.Println(h1, h2, h3) //print to console for right now, but technically this info is unimportant
+	r.Read()
 
 	//now lets read the actual contents of the csv file
 	//note, each iteration of the for loop reads one record
@@ -49,12 +48,16 @@ func New(path string) []OrderInfo {
 		//populate our order info fields and create struct
 		s1, s2 := record[0], record[4]
 		f1, err := strconv.ParseFloat(record[12][1:], 32)
-		orderhist[i] = OrderInfo{s1, s2, float32(f1)}
+		orderhist = append(orderhist, OrderInfo{s1, s2, float32(f1)})
 	}
 
 	return orderhist
 }
 
 func main() {
-	fmt.Println(New("C:\\dev\\GoProjects\\test\\example.csv"))
+	b, err := json.Marshal(New("C:\\dev\\GoProjects\\test\\example.csv"))
+	if err != nil {
+		fmt.Println(err)
+	}
+	fmt.Println(string(b))
 }
