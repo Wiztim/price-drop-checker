@@ -2,18 +2,15 @@ package main
 
 import (
 	"encoding/csv"
-	"encoding/json"
+	//"encoding/json"
 	"fmt"
 	"io"
 	"math"
 	"net/http"
-	"os"
 	"sort"
 	"strconv"
 	"strings"
-
 	"github.com/aws/aws-lambda-go/lambda"
-
 )
 
 type ItemCategories struct {
@@ -34,10 +31,10 @@ type OrderInfo struct {
 
 //@param: path string - this string represents the filepath of the csv in question
 //@return: Returns an array where each element is an OrderInfo struct containing key item details
-func New() ItemCategories {
+func New() (ItemCategories, error) {
 	//parse info from csv
 	orderhist := parseCSV(
-	`Order Date,Order ID,Title,Category,ASIN/ISBN,UNSPSC Code,Website,Release Date,Condition,Seller,Seller Credentials,List Price Per Unit,Purchase Price Per Unit,Quantity,Payment Instrument Type,Purchase Order Number,PO Line Number,Ordering Customer Email,Shipment Date,Shipping Address Name,Shipping Address Street 1,Shipping Address Street 2,Shipping Address City,Shipping Address State,Shipping Address Zip,Order Status,Carrier Name & Tracking Number,Item Subtotal,Item Subtotal Tax,Item Total,Tax Exemption Applied,Tax Exemption Type,Exemption Opt-Out,Buyer Name,Currency,Group Name
+		`Order Date,Order ID,Title,Category,ASIN/ISBN,UNSPSC Code,Website,Release Date,Condition,Seller,Seller Credentials,List Price Per Unit,Purchase Price Per Unit,Quantity,Payment Instrument Type,Purchase Order Number,PO Line Number,Ordering Customer Email,Shipment Date,Shipping Address Name,Shipping Address Street 1,Shipping Address Street 2,Shipping Address City,Shipping Address State,Shipping Address Zip,Order Status,Carrier Name & Tracking Number,Item Subtotal,Item Subtotal Tax,Item Total,Tax Exemption Applied,Tax Exemption Type,Exemption Opt-Out,Buyer Name,Currency,Group Name
 7/8/2022,113-1904590-5333829,Amazon Basics 2 Pack CR1632 3 Volt Lithium Coin Cell Battery,BATTERY,B07JLN1WXT,26111700,Amazon.com,,new,Amazon.com,,$6.29 ,$6.29 ,1,Discover7733,,,salgadoguadalupe14@yahoo.com,7/8/2022,Guadalupe Salgado,254 W BARNETT ST,,VENTURA,CA,93001-1614,Shipped,AMZN_US(TBA163049550404),$6.29 ,$0.49 ,$6.78 ,FALSE,,FALSE,Guadalupe,USD,
 7/9/2022,113-8370767-1548225,Corduroy Bags Cross body Bag Purse for Women Mini Travel Bags Handbags Eco Bag,HANDBAG,B09KRKT738,53121600,Amazon.com,,new,Eflying Lion,,$19.99 ,$15.99 ,1,MasterCard - 5527 and Gift Certificate/Card,,,salgadoguadalupe14@yahoo.com,7/10/2022,Guadalupe Salgado,254 W BARNETT ST,,VENTURA,CA,93001-1614,Shipped,AMZN_US(TBA164499033604),$15.99 ,$1.24 ,$17.23 ,FALSE,,FALSE,Guadalupe,USD,
 7/28/2022,113-6152711-0397020,"PetAmi Dog Treat Pouch | Dog Training Pouch Bag with Waist Shoulder Strap, Poop Bag Dispenser and Collapsible Bowl | Treat Training Bag for Treats, Kibbles, Pet Toys | 3 Ways to Wear (Red)",PET_SUPPLIES,B07GX7T2MW,10111300,Amazon.com,,new,Caravan Group,,$30.99 ,$15.99 ,1,Discover7733,,,salgadoguadalupe14@yahoo.com,7/29/2022,Guadalupe Salgado,254 W BARNETT ST,,VENTURA,CA,93001-1614,Shipped,AMZN_US(TBA191883679304),$15.99 ,$1.24 ,$17.23 ,FALSE,,FALSE,Guadalupe,USD,
@@ -53,7 +50,7 @@ func New() ItemCategories {
 
 	//let's now categorize each listing
 	result := categorizeItems(&orderhist)
-	return result
+	return result, nil
 }
 
 //populates our array with info from csv
@@ -61,7 +58,7 @@ func parseCSV(str string) []OrderInfo {
 	s := strings.NewReader(str)
 
 	//from the OS file reader, we create a reader for csv
-	r := csv.NewReader(file)
+	r := csv.NewReader(s)
 	r.FieldsPerRecord = 36 // magic number, oops, but this is how many fields are in our CSV
 	orderhist := []OrderInfo{}
 
@@ -165,7 +162,7 @@ func getUrl(name, asin string) string {
 	return itemurl
 }
 
-func categorizeItems(orderhist *[]OrderInfo) (ItemCategories, error) {
+func categorizeItems(orderhist *[]OrderInfo) ItemCategories {
 	cat := ItemCategories{}
 
 	// if we sort the orderhist items by price, they will come out sorted when we put them in the categories
@@ -187,9 +184,17 @@ func categorizeItems(orderhist *[]OrderInfo) (ItemCategories, error) {
 		}
 	}
 
-	return cat, nil
+	return cat
 }
 
 func main() {
-		lambda.Start(New)
+	lambda.Start(New)
+	/*
+	a, _ := New()
+	b, err := json.Marshal(a)
+	if err != nil {
+		fmt.Println(err)
+	}
+	fmt.Println(string(b))
+	*/
 }
