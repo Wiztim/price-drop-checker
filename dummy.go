@@ -14,7 +14,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
 )
 
@@ -43,27 +42,22 @@ var (
 )
 
 // Handler is Lambda function handler
-func Handler(request events.APIGatewayProxyRequest) (ItemCategories, error) {
-
-	// stdout and stderr are sent to AWS CloudWatch Logs
-	fmt.Printf("Processing Lambda request %s\n", request.RequestContext.RequestID)
-
+func Handler(request string) (ItemCategories, error) {
 	// If no name is provided in the HTTP request body, throw an error
-	if len(request.Body) < 1 {
+	if len(request) < 1 {
 		return ItemCategories{}, ErrNameNotProvided
 	}
 
-	return New(request.Body)
+	return New(request)
 }
 
-//@param: path string - this string represents the filepath of the csv in question
+//@param: body string - this string represents the contents of the csv in question
 //@return: Returns an array where each element is an OrderInfo struct containing key item details
 func New(body string) (ItemCategories, error) {
 	//parse info from csv
 	orderhist := parseCSV(body)
 
-	//this gets info for each item from web request
-	//TODO: add parallelization
+	//this gets price and availability info for each item from web request - note, makes use of asynchronous calls
 	getoriginalprice(&orderhist)
 
 	//let's now categorize each listing
@@ -96,7 +90,7 @@ func parseCSV(body string) []OrderInfo {
 			fmt.Println(err)
 		}
 
-		//parsing date like a bitch
+		//parsing date from the csv because Amazon doesn't put it in any normal format
 		firstdiv := strings.Index(record[0], "/")
 		month := record[0][0:firstdiv]
 		if firstdiv < 2 {
