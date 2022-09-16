@@ -47,10 +47,10 @@ var (
 
 // Handler is Lambda function handler
 func Handler(request myMessage) (ItemCategories, error) {
-	fmt.Println("This should be the body: ", request.plstr)
+	//fmt.Println("This should be the body: ", request.plstr)
 	// If no name is provided in the HTTP request body, throw an error
 	if len(request.plstr) < 1 {
-		return ItemCategories{}, ErrNameNotProvided
+		return ItemCategories{}, errors.New("This should be the body: " + request.plstr)
 	}
 
 	return New(request.plstr)
