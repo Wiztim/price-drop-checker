@@ -36,28 +36,34 @@ type OrderInfo struct {
 	// SEARCH BAR ON THIS PAGE https://www.amazon.com/gp/css/returns/homepage.html?ref_=footer_hy_f_4
 }
 
+type myMessage struct {
+	plstr string `json:"message"`
+}
+
 var (
 	// ErrNameNotProvided is thrown when a name is not provided
 	ErrNameNotProvided = errors.New("no name was provided in the HTTP body")
 )
 
 // Handler is Lambda function handler
-func Handler(request string) (ItemCategories, error) {
+func Handler(request myMessage) (ItemCategories, error) {
+	fmt.Println("This should be the body: ", request.plstr)
 	// If no name is provided in the HTTP request body, throw an error
-	if len(request) < 1 {
+	if len(request.plstr) < 1 {
 		return ItemCategories{}, ErrNameNotProvided
 	}
 
-	return New(request)
+	return New(request.plstr)
 }
 
-//@param: body string - this string represents the contents of the csv in question
-//@return: Returns an array where each element is an OrderInfo struct containing key item details
+// @param: path string - this string represents the filepath of the csv in question
+// @return: Returns an array where each element is an OrderInfo struct containing key item details
 func New(body string) (ItemCategories, error) {
 	//parse info from csv
 	orderhist := parseCSV(body)
 
-	//this gets price and availability info for each item from web request - note, makes use of asynchronous calls
+	//this gets info for each item from web request
+	//TODO: add parallelization
 	getoriginalprice(&orderhist)
 
 	//let's now categorize each listing
@@ -65,7 +71,7 @@ func New(body string) (ItemCategories, error) {
 	return result, nil
 }
 
-//populates our array with info from csv
+// populates our array with info from csv
 func parseCSV(body string) []OrderInfo {
 	//reading csv given by frontend in body of POST
 	file := strings.NewReader(body)
@@ -90,7 +96,7 @@ func parseCSV(body string) []OrderInfo {
 			fmt.Println(err)
 		}
 
-		//parsing date from the csv because Amazon doesn't put it in any normal format
+		//parsing date like a bitch
 		firstdiv := strings.Index(record[0], "/")
 		month := record[0][0:firstdiv]
 		if firstdiv < 2 {
@@ -132,8 +138,8 @@ func parseCSV(body string) []OrderInfo {
 	return orderhist
 }
 
-//populates currente price and price drop in orderhist array
-//uses sync.WaitGroup
+// populates currente price and price drop in orderhist array
+// uses sync.WaitGroup
 func getoriginalprice(orderhist *[]OrderInfo) {
 	var wg sync.WaitGroup
 	for i := range *orderhist {
