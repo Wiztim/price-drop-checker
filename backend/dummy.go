@@ -36,30 +36,26 @@ type OrderInfo struct {
 	// SEARCH BAR ON THIS PAGE https://www.amazon.com/gp/css/returns/homepage.html?ref_=footer_hy_f_4
 }
 
-type myMessage struct {
-	plstr string `json:"message"`
-}
-
 var (
 	// ErrNameNotProvided is thrown when a name is not provided
 	ErrNameNotProvided = errors.New("no name was provided in the HTTP body")
 )
 
 // Handler is Lambda function handler
-func Handler(request myMessage) (ItemCategories, error) {
-	//fmt.Println("This should be the body: ", request.plstr)
+func Handler(request string) (ItemCategories, error) {
 	// If no name is provided in the HTTP request body, throw an error
-	if len(request.plstr) < 1 {
-		return ItemCategories{}, errors.New("This should be the body: " + request.plstr)
+	if len(request) < 1 {
+		return ItemCategories{}, errors.New("This was a bad request: " + request)
 	}
 
-	return New(request.plstr)
+	return New(request)
 }
 
 // @param: path string - this string represents the filepath of the csv in question
 // @return: Returns an array where each element is an OrderInfo struct containing key item details
 func New(body string) (ItemCategories, error) {
 	//parse info from csv
+	strings.Replace(body, `\n`, "\n", -1)
 	orderhist := parseCSV(body)
 
 	//this gets info for each item from web request
