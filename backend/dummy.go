@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/csv"
-	//"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -26,7 +25,7 @@ type ItemCategories struct {
 
 type OrderInfo struct {
 	Name          string  `json:"name"`
-	TimeStr       string  `json:"dateOrdered"`   // str representing when order was placed
+	DateOrdered   string  `json:"dateOrdered"`   // str representing when order was placed
 	Asin          string  `json:"asin"`          // str represnting item number of product
 	OriginalPrice float64 `json:"originalPrice"` // float representing the cost the item was bought for
 	CurrentPrice  float64 `json:"currentPrice"`  // curr price
@@ -36,117 +35,120 @@ type OrderInfo struct {
 	// SEARCH BAR ON THIS PAGE https://www.amazon.com/gp/css/returns/homepage.html?ref_=footer_hy_f_4
 }
 
-var (
-	// ErrNameNotProvided is thrown when a name is not provided
-	ErrNameNotProvided = errors.New("no name was provided in the HTTP body")
+const (
+	FIELDS_PER_RECORD     = 36
+	NAME_COLUMN           = 2
+	DATE_ORDERED_COLUMN   = 0
+	ASIN_COLUMN           = 4
+	ORIGINAL_PRICE_COLUMN = 12
 )
 
 // Handler is Lambda function handler
 func Handler(request string) (ItemCategories, error) {
-	// If no name is provided in the HTTP request body, throw an error
+	//note: we must return a valid ItemCategories struct, it cannot be nil
+	// emptyRequest is thrown when the body of the Lambda Request is empty
 	if len(request) < 1 {
-		return ItemCategories{}, errors.New("This was a bad request: " + request)
+		return ItemCategories{}, errors.New("Handler: Bad Request - Empty body")
 	}
-
-	return New(request)
+	return newItemCategories(request)
 }
 
-// @param: path string - this string represents the filepath of the csv in question
-// @return: Returns an array where each element is an OrderInfo struct containing key item details
-func New(body string) (ItemCategories, error) {
-	//parse info from csv
-	strings.Replace(body, `\n`, "\n", -1)
-	orderhist := parseCSV(body)
+func newItemCategories(body string) (ItemCategories, error) {
+	orderHistory, err := parseCSV(body)
+	if err != nil {
+		return ItemCategories{}, nil
+	}
 
 	//this gets info for each item from web request
-	//TODO: add parallelization
-	getoriginalprice(&orderhist)
+	getPriceInfo(&orderHistory)
 
 	//let's now categorize each listing
-	result := categorizeItems(&orderhist)
+	result := categorizeItems(&orderHistory)
 	return result, nil
 }
 
-// populates our array with info from csv
-func parseCSV(body string) []OrderInfo {
-	//reading csv given by frontend in body of POST
-	file := strings.NewReader(body)
+// populates a new slice with info from csv
+func parseCSV(requestBody string) ([]OrderInfo, error) {
+	//we first correctly format the input for reading
+	strings.Replace(requestBody, `\n`, "\n", -1)
 
-	//from the str file reader, we create a reader for csv
-	r := csv.NewReader(file)
-	r.FieldsPerRecord = 36 // magic number, oops, but this is how many fields are in our CSV
-	orderhist := []OrderInfo{}
+	//reading csv given by frontend in body of POST request
+	stringReader := strings.NewReader(requestBody)
+	csvReader := csv.NewReader(stringReader)
 
-	//lets get the headers we care about, noting the first line contains all the field names
-	r.Read()
+	csvReader.FieldsPerRecord = FIELDS_PER_RECORD
+	orderHistory := make([]OrderInfo, 0)
+
+	//Let's make sure we have the headers we care about: Title (Name), Date Ordered, ASIN/ISBN (Asin), and Purchase Price Per Unit (OriginalPrice)
+	csvHeaders, err := csvReader.Read()
+	if err != nil {
+		return nil, errors.New("parseCSV: " + fmt.Sprint(err))
+	}
+	if csvHeaders[NAME_COLUMN] != "Title" || csvHeaders[DATE_ORDERED_COLUMN] != "Date Ordered" || csvHeaders[ASIN_COLUMN] != "ASIN/ISBN" || csvHeaders[ORIGINAL_PRICE_COLUMN] != "Purchase Price Per Unit" {
+		return nil, errors.New(`parseCSV: Missing "Title", "Date Ordered", "ASIN/ISBN", or "Purchase Price Per Unit" fields in CSV`)
+	}
 
 	//now lets read the actual contents of the csv file
 	//note, each iteration of the for loop reads one record
 	for i := 0; true; i++ {
 		//catch errors
-		record, err := r.Read()
+		record, err := csvReader.Read()
 		if err == io.EOF {
 			break
 		}
 		if err != nil {
-			fmt.Println(err)
+			return nil, err
 		}
 
-		//parsing date like a bitch
-		firstdiv := strings.Index(record[0], "/")
-		month := record[0][0:firstdiv]
-		if firstdiv < 2 {
-			month = "0" + month
-		}
-
-		str := record[0][firstdiv+1:]
-		seconddiv := strings.Index(str, "/")
-		day := str[:seconddiv]
-		if seconddiv < 2 {
-			day = "0" + day
-		}
-
-		year := str[seconddiv+1:]
-
-		timestamp, err := time.Parse("01/02 03:04:05PM '06 -0700", month+"/"+day+" 00:00:00AM '"+year[2:]+" -0000")
+		//parsing date to see if item is returnable or not
+		orderDate := record[0]
+		timestamp, err := time.Parse("01/02/03", orderDate)
 		if err != nil {
-			fmt.Println(err)
+			return nil, errors.New("parseCSV: " + fmt.Sprint(err))
 		}
 
+		//this if statement will activate when the item is within 30 days of being ordered (in other words, the item is in the return window.)
+		//This is here mostly as a safeguard should we need to implment it. For now, we trust users to upload CSVs with a somewhat recent order window.
 		if time.Duration.Hours(time.Now().Sub(timestamp)) > 24*30 {
-			//fmt.Println("over 30 days")
-			continue
 		}
 
 		//populate our order info fields and create struct
-		s0, s1, s2 := record[2], record[0], record[4]
+		itemName, itemDateOrdered, itemAsin := record[NAME_COLUMN], record[DATE_ORDERED_COLUMN], record[ASIN_COLUMN]
 
 		//now we just parse the float, removing any whitespace from the string
-		f1, err := strconv.ParseFloat(strings.TrimSpace(record[12][1:]), 64)
+		itemOriginalPrice, err := strconv.ParseFloat(strings.TrimSpace(record[ORIGINAL_PRICE_COLUMN][1:]), 64)
 		if err != nil {
-			fmt.Println(err)
+			return nil, errors.New("parseCSV: could not parse original price")
 		}
 
-		//we can now mostly make an OrderInfo object
-		orderhist = append(orderhist, OrderInfo{s0, s1, s2, f1, 0, 0})
+		//we can now mostly make an OrderInfo object. Unassigned fields will have value of -1
+		orderHistory = append(orderHistory, OrderInfo{
+			Name:          itemName,
+			DateOrdered:   itemDateOrdered,
+			Asin:          itemAsin,
+			OriginalPrice: itemOriginalPrice,
+			CurrentPrice:  -1,
+			PriceDrop:     -1})
 	}
 
-	return orderhist
+	return orderHistory, nil
 }
 
-// populates currente price and price drop in orderhist array
-// uses sync.WaitGroup
-func getoriginalprice(orderhist *[]OrderInfo) {
+// populates currente price and price drop in orderHistory slice
+// TODO: Implement errgroup instead of waitgroup
+func getPriceInfo(orderHistory *[]OrderInfo) {
 	var wg sync.WaitGroup
-	for i := range *orderhist {
-		wg.Add(1) //we are starting a goroutine
-		go getOriginalPricePerItem(&((*orderhist)[i]), &wg)
+	for _, item := range *orderHistory {
+		//we are starting a goroutine
+		wg.Add(1)
+		go getPriceInfoForItem(&item, &wg)
 	}
+
 	//let's wait for all goroutines to finish
 	wg.Wait()
 }
 
-func getOriginalPricePerItem(item *OrderInfo, wg *sync.WaitGroup) {
+func getPriceInfoForItem(item *OrderInfo, wg *sync.WaitGroup) {
 	defer wg.Done() //when this function ends, a goroutine will finish, so let's decrement the counter.
 
 	//webscraping portion!
@@ -205,29 +207,29 @@ func getUrl(name, asin string) string {
 	return itemurl
 }
 
-func categorizeItems(orderhist *[]OrderInfo) ItemCategories {
-	cat := ItemCategories{}
+func categorizeItems(orderHistory *[]OrderInfo) ItemCategories {
+	categories := ItemCategories{}
 
-	// if we sort the orderhist items by price, they will come out sorted when we put them in the categories
+	// if we sort the orderHistory items by price, they will come out sorted when we put them in the categories
 	// so we will just sort them by pricedrop now
-	sort.Slice((*orderhist), func(i, j int) bool {
-		return (*orderhist)[i].PriceDrop > (*orderhist)[j].PriceDrop
+	sort.Slice((*orderHistory), func(i, j int) bool {
+		return (*orderHistory)[i].PriceDrop > (*orderHistory)[j].PriceDrop
 	})
 
-	for i := range *orderhist {
-		switch x := (*orderhist)[i].PriceDrop; {
+	for _, item := range *orderHistory {
+		switch x := item.PriceDrop; {
 		case x > 0: //aka price did drop
-			cat.PriceReduced = append(cat.PriceReduced, (*orderhist)[i])
-		case x == (*orderhist)[i].CurrentPrice: //this means it is unavailable
-			cat.Unavailable = append(cat.Unavailable, (*orderhist)[i])
+			categories.PriceReduced = append(categories.PriceReduced, item)
+		case x == item.CurrentPrice: //this means it is unavailable
+			categories.Unavailable = append(categories.Unavailable, item)
 		case x == 0: //no drop
-			cat.PriceUnchanged = append(cat.PriceUnchanged, (*orderhist)[i])
+			categories.PriceUnchanged = append(categories.PriceUnchanged, item)
 		case x < 0: //price increased
-			cat.PriceIncreased = append(cat.PriceIncreased, (*orderhist)[i])
+			categories.PriceIncreased = append(categories.PriceIncreased, item)
 		}
 	}
 
-	return cat
+	return categories
 }
 
 func main() {
