@@ -10,10 +10,10 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
-	"github.com/aws/aws-lambda-go/lambda"
+	//"github.com/aws/aws-lambda-go/lambda"
+	"golang.org/x/sync/errgroup"
 )
 
 type ItemCategories struct {
@@ -36,7 +36,6 @@ type OrderInfo struct {
 }
 
 const (
-	FIELDS_PER_RECORD     = 36
 	NAME_COLUMN           = 2
 	DATE_ORDERED_COLUMN   = 0
 	ASIN_COLUMN           = 4
@@ -56,11 +55,14 @@ func Handler(request string) (ItemCategories, error) {
 func newItemCategories(body string) (ItemCategories, error) {
 	orderHistory, err := parseCSV(body)
 	if err != nil {
-		return ItemCategories{}, nil
+		return ItemCategories{}, err
 	}
 
 	//this gets info for each item from web request
-	getPriceInfo(&orderHistory)
+	err = getPriceInfo(&orderHistory)
+	if err != nil {
+		return ItemCategories{}, err
+	}
 
 	//let's now categorize each listing
 	result := categorizeItems(&orderHistory)
@@ -70,21 +72,21 @@ func newItemCategories(body string) (ItemCategories, error) {
 // populates a new slice with info from csv
 func parseCSV(requestBody string) ([]OrderInfo, error) {
 	//we first correctly format the input for reading
-	strings.Replace(requestBody, `\n`, "\n", -1)
+	requestBody = strings.Replace(requestBody, `\n`, "\n", -1)
 
 	//reading csv given by frontend in body of POST request
 	stringReader := strings.NewReader(requestBody)
 	csvReader := csv.NewReader(stringReader)
 
-	csvReader.FieldsPerRecord = FIELDS_PER_RECORD
+	//csvReader.FieldsPerRecord = FIELDS_PER_RECORD
 	orderHistory := make([]OrderInfo, 0)
 
 	//Let's make sure we have the headers we care about: Title (Name), Date Ordered, ASIN/ISBN (Asin), and Purchase Price Per Unit (OriginalPrice)
 	csvHeaders, err := csvReader.Read()
 	if err != nil {
-		return nil, errors.New("parseCSV: " + fmt.Sprint(err))
+		return nil, errors.New("parseCSV: could not read first" + err.Error())
 	}
-	if csvHeaders[NAME_COLUMN] != "Title" || csvHeaders[DATE_ORDERED_COLUMN] != "Date Ordered" || csvHeaders[ASIN_COLUMN] != "ASIN/ISBN" || csvHeaders[ORIGINAL_PRICE_COLUMN] != "Purchase Price Per Unit" {
+	if csvHeaders[NAME_COLUMN] != "Title" || csvHeaders[DATE_ORDERED_COLUMN] != "Order Date" || csvHeaders[ASIN_COLUMN] != "ASIN/ISBN" || csvHeaders[ORIGINAL_PRICE_COLUMN] != "Purchase Price Per Unit" {
 		return nil, errors.New(`parseCSV: Missing "Title", "Date Ordered", "ASIN/ISBN", or "Purchase Price Per Unit" fields in CSV`)
 	}
 
@@ -100,25 +102,13 @@ func parseCSV(requestBody string) ([]OrderInfo, error) {
 			return nil, err
 		}
 
-		//parsing date to see if item is returnable or not
-		orderDate := record[0]
-		timestamp, err := time.Parse("01/02/03", orderDate)
-		if err != nil {
-			return nil, errors.New("parseCSV: " + fmt.Sprint(err))
-		}
-
-		//this if statement will activate when the item is within 30 days of being ordered (in other words, the item is in the return window.)
-		//This is here mostly as a safeguard should we need to implment it. For now, we trust users to upload CSVs with a somewhat recent order window.
-		if time.Duration.Hours(time.Now().Sub(timestamp)) > 24*30 {
-		}
-
 		//populate our order info fields and create struct
 		itemName, itemDateOrdered, itemAsin := record[NAME_COLUMN], record[DATE_ORDERED_COLUMN], record[ASIN_COLUMN]
 
 		//now we just parse the float, removing any whitespace from the string
 		itemOriginalPrice, err := strconv.ParseFloat(strings.TrimSpace(record[ORIGINAL_PRICE_COLUMN][1:]), 64)
 		if err != nil {
-			return nil, errors.New("parseCSV: could not parse original price")
+			return nil, errors.New("parseCSV: could not parse original price" + err.Error())
 		}
 
 		//we can now mostly make an OrderInfo object. Unassigned fields will have value of -1
@@ -134,23 +124,48 @@ func parseCSV(requestBody string) ([]OrderInfo, error) {
 	return orderHistory, nil
 }
 
-// populates currente price and price drop in orderHistory slice
-// TODO: Implement errgroup instead of waitgroup
-func getPriceInfo(orderHistory *[]OrderInfo) {
-	var wg sync.WaitGroup
-	for _, item := range *orderHistory {
-		//we are starting a goroutine
-		wg.Add(1)
-		go getPriceInfoForItem(&item, &wg)
+func isItemOrderedWithin30Days(orderDate string) (bool, error) {
+	//parsing date to see if item is returnable or not
+	timeStringArr := strings.Split(orderDate, "/")
+	if len(timeStringArr[0]) == 1 {
+		timeStringArr[0] = "0" + timeStringArr[0]
+	}
+	if len(timeStringArr[1]) == 1 {
+		timeStringArr[1] = "0" + timeStringArr[1]
+	}
+	timeStringArr[2] = timeStringArr[2][2:]
+	formattedTime := timeStringArr[0] + "/" + timeStringArr[1] + "/" + timeStringArr[2]
+
+	timestamp, err := time.Parse("01/02/03", formattedTime)
+	if err != nil {
+		return false, errors.New("parseCSV: " + err.Error())
 	}
 
-	//let's wait for all goroutines to finish
-	wg.Wait()
+	//this if statement will activate when the item is within 30 days of being ordered (in other words, the item is in the return window.)
+	//This is here mostly as a safeguard should we need to implment it. For now, we trust users to upload CSVs with a somewhat recent order window.
+	if time.Duration.Hours(time.Now().Sub(timestamp)) > 24*30 {
+		return false, nil
+	}
+	return true, nil
 }
 
-func getPriceInfoForItem(item *OrderInfo, wg *sync.WaitGroup) {
-	defer wg.Done() //when this function ends, a goroutine will finish, so let's decrement the counter.
+// populates currente price and price drop in orderHistory slice
+func getPriceInfo(orderHistory *[]OrderInfo) error {
+	eg := new(errgroup.Group)
+	for _, item := range *orderHistory {
+		//we are starting a new goroutine - the first goroutine that returns a non-nil error will output an error.
+		eg.Go(func() error {
+			return getPriceInfoForItem(&item)
+		})
+	}
+	if err := eg.Wait(); err != nil {
+		return errors.New("getPriceInfo: " + err.Error())
+	}
 
+	return nil
+}
+
+func getPriceInfoForItem(item *OrderInfo) error {
 	//webscraping portion!
 	//we first generate the URL we need to GET
 	itemUrl := getUrl(item.Name, item.Asin)
@@ -158,47 +173,57 @@ func getPriceInfoForItem(item *OrderInfo, wg *sync.WaitGroup) {
 	//now let's actually GET the webpage
 	resp, err := http.Get(itemUrl)
 	if err != nil {
-		fmt.Println(err)
+		return errors.New("getPriceInfoForItem: Cannot retrieve webpage for " + itemUrl + err.Error())
 	}
 
 	//let's look at the HTML body of the response
 	body, err := io.ReadAll(resp.Body)
-	strbody := string(body)
+	if err != nil {
+		return errors.New("getPriceInfoForItem: Cannot ready body of response from " + itemUrl + err.Error())
+	}
+	respBodyString := string(body)
+	defer resp.Body.Close()
+
+	//We first check if we got served a captcha - the webpage will only have the following quote if the program was served a captcha
+	if strings.Index(respBodyString, `For information about migrating to our APIs refer to our Marketplace APIs at https://developer.amazonservices.com/ref=rm_c_sv, or our Product Advertising API at https://affiliate-program.amazon.com/gp/advertising/api/detail/main.html/ref=rm_c_ac for advertising use cases.`) != -1 {
+		return errors.New("getPriceInfoForItem: Got served a captcha by Amazon, likely for suspicious behavior regarding item: " + item.Name)
+	}
 
 	//we first check if the item is unavailable, because if it is unavailable, we will get some NOT okay prices.
 	//this tag should only appear on unavailable items
-	if priceindex := strings.Index(strbody, `<span class="a-color-price a-text-bold">Currently unavailable.</span>`); priceindex != -1 {
+	if strings.Index(respBodyString, `<span class="a-color-price a-text-bold">Currently unavailable.</span>`) != -1 {
 		//unavailable, so let's just skip skip the next call
-		//fmt.Println("Sorry, but, ", (*orderhist)[i].Name, " is currently unavailable.")
-		return
+		//fmt.Println("Sorry, but, ", (*orderhist)[i].Name, " is currently unavailable.") - this was for local behavior troubleshooting
+		return nil
 	}
 
 	//note: the first instance of `<span aria-hidden="true">$` seems to be the actual price of the item before tax, but this
 	//is entirely empiracally decided
 	//NEW IN USE: THIS IS BETTER??? <span class="a-offscreen">$
-	priceindex := strings.Index(strbody, `<span class="a-offscreen">$`)
+	priceindex := strings.Index(respBodyString, `<span class="a-offscreen">$`)
 
 	//now we need to get the number in this string right after the priceindex
 	//we know this number ends because the span is terminated with "<"
 	//also note `<span class="a-offscreen">$` is 27 chars long
-	var strresult string = ""
-	for strbody[priceindex+27] != '<' {
-		strresult += string(strbody[priceindex+27])
+	flagLength := 27
+	var priceString string = ""
+	for respBodyString[priceindex+flagLength] != '<' {
+		priceString += string(respBodyString[priceindex+flagLength])
 		priceindex++
 	}
-	price, err := strconv.ParseFloat(strresult, 64)
+	fmt.Println("Attempting to parse" + priceString)
+	price, err := strconv.ParseFloat(priceString, 64)
 	if err != nil {
-		fmt.Println(err)
 		//fmt.Println("Cannot get price from: ", getUrl((*orderhist)[i].Name, (*orderhist)[i].Asin))
+		return errors.New("Cannot get price from: " + itemUrl + err.Error())
 	}
 
 	//now lets actually modify our item
 	item.CurrentPrice = price
 	item.PriceDrop = math.Round((item.OriginalPrice-price)*100) / 100
 
-	//done!
-	resp.Body.Close()
-	//fmt.Println("Price obtained from URL: ", getUrl((*orderhist)[i].Name, (*orderhist)[i].Asin), " is: ", price)
+	//We could have only gotten here if there were no errors
+	return nil
 }
 
 func getUrl(name, asin string) string {
@@ -220,7 +245,7 @@ func categorizeItems(orderHistory *[]OrderInfo) ItemCategories {
 		switch x := item.PriceDrop; {
 		case x > 0: //aka price did drop
 			categories.PriceReduced = append(categories.PriceReduced, item)
-		case x == item.CurrentPrice: //this means it is unavailable
+		case x == -1 && item.CurrentPrice == -1: //this means it is unavailable since neither Price Drop or Current Price were set
 			categories.Unavailable = append(categories.Unavailable, item)
 		case x == 0: //no drop
 			categories.PriceUnchanged = append(categories.PriceUnchanged, item)
@@ -233,5 +258,6 @@ func categorizeItems(orderHistory *[]OrderInfo) ItemCategories {
 }
 
 func main() {
-	lambda.Start(Handler)
+	fmt.Println(Handler(`Order Date,Order ID,Title,Category,ASIN/ISBN,UNSPSC Code,Website,Release Date,Condition,Seller,Seller Credentials,List Price Per Unit,Purchase Price Per Unit,Quantity,Payment Instrument Type,Purchase Order Number,PO Line Number,Ordering Customer Email,Shipment Date,Shipping Address Name,Shipping Address Street 1,Shipping Address Street 2,Shipping Address City,Shipping Address State,Shipping Address Zip,Order Status,Carrier Name & Tracking Number,Item Subtotal,Item Subtotal Tax,Item Total,Tax Exemption Applied,Tax Exemption Type,Exemption Opt-Out,Buyer Name,Currency,Group Name\n9/8/2022,113-1904590-5333829,Amazon Basics 2 Pack CR1632 3 Volt Lithium Coin Cell Battery,BATTERY,B07JLN1WXT,26111700,Amazon.com,,new,Amazon.com,,$6.29 ,$6.29 ,1,Discover7733,,,salgadoguadalupe14@yahoo.com,7/8/2022,Guadalupe Salgado,254 W BARNETT ST,,VENTURA,CA,93001-1614,Shipped,AMZN_US(TBA163049550404),$6.29 ,$0.49 ,$6.78 ,FALSE,,FALSE,Guadalupe,USD,`))
+	//lambda.Start(Handler)
 }
