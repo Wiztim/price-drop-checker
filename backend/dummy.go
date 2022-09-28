@@ -78,7 +78,6 @@ func parseCSV(requestBody string) ([]OrderInfo, error) {
 	stringReader := strings.NewReader(requestBody)
 	csvReader := csv.NewReader(stringReader)
 
-	//csvReader.FieldsPerRecord = FIELDS_PER_RECORD
 	orderHistory := make([]OrderInfo, 0)
 
 	//Let's make sure we have the headers we care about: Title (Name), Date Ordered, ASIN/ISBN (Asin), and Purchase Price Per Unit (OriginalPrice)
@@ -90,6 +89,9 @@ func parseCSV(requestBody string) ([]OrderInfo, error) {
 		return nil, errors.New(`parseCSV: Missing "Title", "Date Ordered", "ASIN/ISBN", or "Purchase Price Per Unit" fields in CSV`)
 	}
 
+	//Note: we currently do not call isItemOrderedWithin30Days(record[DAT_ORDERED_COLUMN]). We trust customers to upload a csv with a recent enough date range
+	//But if we did, we would call it right here.
+
 	//now lets read the actual contents of the csv file
 	//note, each iteration of the for loop reads one record
 	for i := 0; true; i++ {
@@ -99,13 +101,13 @@ func parseCSV(requestBody string) ([]OrderInfo, error) {
 			break
 		}
 		if err != nil {
-			return nil, err
+			return nil, errors.New("parseCSV: could not read record. " + err.Error())
 		}
 
 		//populate our order info fields and create struct
 		itemName, itemDateOrdered, itemAsin := record[NAME_COLUMN], record[DATE_ORDERED_COLUMN], record[ASIN_COLUMN]
 
-		//now we just parse the float, removing any whitespace from the string
+		//now we just parse the float, removing whitespace and a "$" from the string
 		itemOriginalPrice, err := strconv.ParseFloat(strings.TrimSpace(record[ORIGINAL_PRICE_COLUMN][1:]), 64)
 		if err != nil {
 			return nil, errors.New("parseCSV: could not parse original price" + err.Error())
@@ -125,7 +127,7 @@ func parseCSV(requestBody string) ([]OrderInfo, error) {
 }
 
 func isItemOrderedWithin30Days(orderDate string) (bool, error) {
-	//parsing date to see if item is returnable or not
+	//parsing date to see if item is with 30 day return window or not
 	timeStringArr := strings.Split(orderDate, "/")
 	if len(timeStringArr[0]) == 1 {
 		timeStringArr[0] = "0" + timeStringArr[0]
@@ -142,7 +144,6 @@ func isItemOrderedWithin30Days(orderDate string) (bool, error) {
 	}
 
 	//this if statement will activate when the item is within 30 days of being ordered (in other words, the item is in the return window.)
-	//This is here mostly as a safeguard should we need to implment it. For now, we trust users to upload CSVs with a somewhat recent order window.
 	if time.Duration.Hours(time.Now().Sub(timestamp)) > 24*30 {
 		return false, nil
 	}
@@ -153,11 +154,12 @@ func isItemOrderedWithin30Days(orderDate string) (bool, error) {
 func getPriceInfo(orderHistory *[]OrderInfo) error {
 	eg := new(errgroup.Group)
 	for _, item := range *orderHistory {
-		//we are starting a new goroutine - the first goroutine that returns a non-nil error will output an error.
+		//we are starting a new goroutine
 		eg.Go(func() error {
 			return getPriceInfoForItem(&item)
 		})
 	}
+	//the first goroutine that returns a non-nil error will output an error, otherwise we wait until all goroutines are finished.
 	if err := eg.Wait(); err != nil {
 		return errors.New("getPriceInfo: " + err.Error())
 	}
@@ -174,6 +176,9 @@ func getPriceInfoForItem(item *OrderInfo) error {
 	resp, err := http.Get(itemUrl)
 	if err != nil {
 		return errors.New("getPriceInfoForItem: Cannot retrieve webpage for " + itemUrl + err.Error())
+	}
+	if resp.Status != "200" {
+		return errors.New("Received HTTP status " + resp.Status + " when retrieving " + itemUrl)
 	}
 
 	//let's look at the HTML body of the response
@@ -192,8 +197,7 @@ func getPriceInfoForItem(item *OrderInfo) error {
 	//we first check if the item is unavailable, because if it is unavailable, we will get some NOT okay prices.
 	//this tag should only appear on unavailable items
 	if strings.Index(respBodyString, `<span class="a-color-price a-text-bold">Currently unavailable.</span>`) != -1 {
-		//unavailable, so let's just skip skip the next call
-		//fmt.Println("Sorry, but, ", (*orderhist)[i].Name, " is currently unavailable.") - this was for local behavior troubleshooting
+		//unavailable, so let's just skip this item
 		return nil
 	}
 
@@ -213,6 +217,7 @@ func getPriceInfoForItem(item *OrderInfo) error {
 	}
 	fmt.Println("Attempting to parse" + priceString)
 	price, err := strconv.ParseFloat(priceString, 64)
+	fmt.Println("Got price of: " + fmt.Sprint(price))
 	if err != nil {
 		//fmt.Println("Cannot get price from: ", getUrl((*orderhist)[i].Name, (*orderhist)[i].Asin))
 		return errors.New("Cannot get price from: " + itemUrl + err.Error())
@@ -245,7 +250,7 @@ func categorizeItems(orderHistory *[]OrderInfo) ItemCategories {
 		switch x := item.PriceDrop; {
 		case x > 0: //aka price did drop
 			categories.PriceReduced = append(categories.PriceReduced, item)
-		case x == -1 && item.CurrentPrice == -1: //this means it is unavailable since neither Price Drop or Current Price were set
+		case item.CurrentPrice == -1: //this means it is unavailable since we never set CurrentPrice
 			categories.Unavailable = append(categories.Unavailable, item)
 		case x == 0: //no drop
 			categories.PriceUnchanged = append(categories.PriceUnchanged, item)
