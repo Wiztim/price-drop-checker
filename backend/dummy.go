@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	//"github.com/aws/aws-lambda-go/lambda"
+	"github.com/aws/aws-lambda-go/lambda"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -263,6 +263,5 @@ func categorizeItems(orderHistory *[]OrderInfo) ItemCategories {
 }
 
 func main() {
-	fmt.Println(Handler(`Order Date,Order ID,Title,Category,ASIN/ISBN,UNSPSC Code,Website,Release Date,Condition,Seller,Seller Credentials,List Price Per Unit,Purchase Price Per Unit,Quantity,Payment Instrument Type,Purchase Order Number,PO Line Number,Ordering Customer Email,Shipment Date,Shipping Address Name,Shipping Address Street 1,Shipping Address Street 2,Shipping Address City,Shipping Address State,Shipping Address Zip,Order Status,Carrier Name & Tracking Number,Item Subtotal,Item Subtotal Tax,Item Total,Tax Exemption Applied,Tax Exemption Type,Exemption Opt-Out,Buyer Name,Currency,Group Name\n9/8/2022,113-1904590-5333829,Amazon Basics 2 Pack CR1632 3 Volt Lithium Coin Cell Battery,BATTERY,B07JLN1WXT,26111700,Amazon.com,,new,Amazon.com,,$6.29 ,$6.29 ,1,Discover7733,,,salgadoguadalupe14@yahoo.com,7/8/2022,Guadalupe Salgado,254 W BARNETT ST,,VENTURA,CA,93001-1614,Shipped,AMZN_US(TBA163049550404),$6.29 ,$0.49 ,$6.78 ,FALSE,,FALSE,Guadalupe,USD,`))
-	//lambda.Start(Handler)
+	lambda.Start(Handler)
 }
