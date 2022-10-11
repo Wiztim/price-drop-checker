@@ -72,28 +72,13 @@ func newPriceChangeCategories(body string) (PriceChangeCategories, error) {
 
 // populates a new slice with info from csv
 func parseCSV(requestBody string) ([]OrderInfo, error) {
-	err := validateCSV(requestBody)
+	csvReader, err := validateCSV(requestBody)
 	if err != nil {
 		return nil, err
 	}
 
-	//we first correctly format the input for reading
-	requestBody = strings.Replace(requestBody, `\n`, "\n", -1)
-
-	//reading csv given by frontend in body of POST request
-	stringReader := strings.NewReader(requestBody)
-	csvReader := csv.NewReader(stringReader)
-
-	orderHistory := make([]OrderInfo, 0)
-
-	//Let's make sure we have the headers we care about: Title (Name), Date Ordered, ASIN/ISBN (Asin), and Purchase Price Per Unit (OriginalPrice)
-	csvHeaders, err := csvReader.Read()
-	if err != nil {
-		return nil, errors.New("parseCSV: could not read first" + err.Error())
-	}
-	if csvHeaders[NAME_COLUMN] != "Title" || csvHeaders[DATE_ORDERED_COLUMN] != "Order Date" || csvHeaders[ASIN_COLUMN] != "ASIN/ISBN" || csvHeaders[ORIGINAL_PRICE_COLUMN] != "Purchase Price Per Unit" {
-		return nil, errors.New(`parseCSV: Missing "Title", "Date Ordered", "ASIN/ISBN", or "Purchase Price Per Unit" fields in CSV`)
-	}
+	//create the return object to be filled
+	orderHistory := []OrderInfo{}
 
 	//Note: we currently do not call isItemOrderedWithin30Days(record[DAT_ORDERED_COLUMN]). We trust customers to upload a csv with a recent enough date range
 	//But if we did, we would call it right here.
@@ -132,12 +117,27 @@ func parseCSV(requestBody string) ([]OrderInfo, error) {
 	return orderHistory, nil
 }
 
-func validateCSV(requestBody string) error {
+func validateCSV(requestBody string) (*csv.Reader, error) {
 	//we should not have received an empty request.
 	if len(requestBody) < 1 {
-		return errors.New("validateCSV: Request body empty.")
+		return nil, errors.New("validateCSV: Request body empty.")
 	}
-	return nil
+	//we first correctly format the input for reading
+	requestBody = strings.Replace(requestBody, `\n`, "\n", -1)
+
+	//reading csv given by frontend in body of POST request
+	stringReader := strings.NewReader(requestBody)
+	csvReader := csv.NewReader(stringReader)
+
+	//Let's make sure we have the headers we care about: Title (Name), Date Ordered, ASIN/ISBN (Asin), and Purchase Price Per Unit (OriginalPrice)
+	csvHeaders, err := csvReader.Read()
+	if err != nil {
+		return nil, errors.New("parseCSV: could not read first" + err.Error())
+	}
+	if csvHeaders[NAME_COLUMN] != "Title" || csvHeaders[DATE_ORDERED_COLUMN] != "Order Date" || csvHeaders[ASIN_COLUMN] != "ASIN/ISBN" || csvHeaders[ORIGINAL_PRICE_COLUMN] != "Purchase Price Per Unit" {
+		return nil, errors.New(`parseCSV: Missing "Title", "Date Ordered", "ASIN/ISBN", or "Purchase Price Per Unit" fields in CSV`)
+	}
+	return csvReader, nil
 }
 
 func isItemOrderedWithin30Days(orderDate string) (bool, error) {
