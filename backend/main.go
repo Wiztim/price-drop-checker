@@ -10,10 +10,10 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/aws/aws-lambda-go/lambda"
-	"golang.org/x/sync/errgroup"
 )
 
 type ItemCategories struct {
@@ -40,16 +40,20 @@ const (
 	DATE_ORDERED_COLUMN   = 0
 	ASIN_COLUMN           = 4
 	ORIGINAL_PRICE_COLUMN = 12
+	CAPTCHA_INDICATOR     = `For information about migrating to our APIs refer to our Marketplace APIs at https://developer.amazonservices.com/ref=rm_c_sv, or our Product Advertising API at https://affiliate-program.amazon.com/gp/advertising/api/detail/main.html/ref=rm_c_ac for advertising use cases.`
+	UNAVAILABLE_INDICATOR = `<span class="a-color-price a-text-bold">Currently unavailable.</span>`
+	PRICE_INDICATOR       = `<span class="a-offscreen">$`
 )
 
 // Handler is Lambda function handler
 func Handler(request string) (ItemCategories, error) {
 	//note: we must return a valid ItemCategories struct, it cannot be nil
-	// emptyRequest is thrown when the body of the Lambda Request is empty
-	if len(request) < 1 {
-		return ItemCategories{}, errors.New("Handler: Bad Request - Empty body")
+	categories, err := newItemCategories(request)
+	if err != nil {
+		fmt.Println(err)
+		return ItemCategories{}, err
 	}
-	return newItemCategories(request)
+	return categories, nil
 }
 
 func newItemCategories(body string) (ItemCategories, error) {
@@ -59,10 +63,7 @@ func newItemCategories(body string) (ItemCategories, error) {
 	}
 
 	//this gets info for each item from web request
-	err = getPriceInfo(&orderHistory)
-	if err != nil {
-		return ItemCategories{}, err
-	}
+	getPriceInfo(&orderHistory)
 
 	//let's now categorize each listing
 	result := categorizeItems(&orderHistory)
@@ -71,6 +72,11 @@ func newItemCategories(body string) (ItemCategories, error) {
 
 // populates a new slice with info from csv
 func parseCSV(requestBody string) ([]OrderInfo, error) {
+	//we should not have received an empty request.
+	if len(requestBody) < 1 {
+		return nil, errors.New("parseCSV: Request body empty.")
+	}
+
 	//we first correctly format the input for reading
 	requestBody = strings.Replace(requestBody, `\n`, "\n", -1)
 
@@ -151,23 +157,24 @@ func isItemOrderedWithin30Days(orderDate string) (bool, error) {
 }
 
 // populates currente price and price drop in orderHistory slice
-func getPriceInfo(orderHistory *[]OrderInfo) error {
-	eg := new(errgroup.Group)
+func getPriceInfo(orderHistory *[]OrderInfo) {
+	var wg sync.WaitGroup
 	for _, item := range *orderHistory {
-		//we are starting a new goroutine
-		eg.Go(func() error {
-			return getPriceInfoForItem(&item)
-		})
+		//we are starting a new goroutine. We call Add(1) for the WaitGroup to track that there is an open thread
+		wg.Add(1)
+		go func() {
+			//decrement the weight group counter once getPriceInfoForItem completes
+			defer wg.Done()
+			getPriceInfoForItem(&item)
+		}()
 	}
-	//the first goroutine that returns a non-nil error will output an error, otherwise we wait until all goroutines are finished.
-	if err := eg.Wait(); err != nil {
-		return errors.New("getPriceInfo: " + err.Error())
-	}
-
-	return nil
+	//wait for all threads to complete
+	wg.Wait()
 }
 
-func getPriceInfoForItem(item *OrderInfo) error {
+// if there is an error, we will just return early.
+// we want to keep getting prices. Errored items will get put into the unavailable category
+func getPriceInfoForItem(item *OrderInfo) {
 	//webscraping portion!
 	//we first generate the URL we need to GET
 	itemUrl := getUrl(item.Name, item.Asin)
@@ -175,60 +182,60 @@ func getPriceInfoForItem(item *OrderInfo) error {
 	//now let's actually GET the webpage
 	resp, err := http.Get(itemUrl)
 	if err != nil {
-		return errors.New("getPriceInfoForItem: Cannot retrieve webpage for " + itemUrl + err.Error())
+
+		fmt.Println("getPriceInfoForItem: Cannot retrieve webpage for " + itemUrl + err.Error())
+		return
 	}
-	if resp.Status != "200" {
-		return errors.New("Received HTTP status " + resp.Status + " when retrieving " + itemUrl)
+	if resp.Status != "200 OK" {
+		fmt.Println("Received HTTP status " + resp.Status + " when retrieving " + itemUrl)
+		return
 	}
 
 	//let's look at the HTML body of the response
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return errors.New("getPriceInfoForItem: Cannot ready body of response from " + itemUrl + err.Error())
+		fmt.Println("getPriceInfoForItem: Cannot ready body of response from " + itemUrl + err.Error())
+		return
 	}
 	respBodyString := string(body)
 	defer resp.Body.Close()
 
 	//We first check if we got served a captcha - the webpage will only have the following quote if the program was served a captcha
-	if strings.Index(respBodyString, `For information about migrating to our APIs refer to our Marketplace APIs at https://developer.amazonservices.com/ref=rm_c_sv, or our Product Advertising API at https://affiliate-program.amazon.com/gp/advertising/api/detail/main.html/ref=rm_c_ac for advertising use cases.`) != -1 {
-		return errors.New("getPriceInfoForItem: Got served a captcha by Amazon, likely for suspicious behavior regarding item: " + item.Name)
+	//This is exceedingly common by the way.
+	if strings.Index(respBodyString, CAPTCHA_INDICATOR) != -1 {
+		fmt.Println("getPriceInfoForItem: Got served a captcha by Amazon, likely for suspicious behavior regarding item: " + item.Name)
+		return
 	}
 
 	//we first check if the item is unavailable, because if it is unavailable, we will get some NOT okay prices.
 	//this tag should only appear on unavailable items
-	if strings.Index(respBodyString, `<span class="a-color-price a-text-bold">Currently unavailable.</span>`) != -1 {
+	if strings.Index(respBodyString, UNAVAILABLE_INDICATOR) != -1 {
 		//unavailable, so let's just skip this item
-		return nil
+		fmt.Println("The item " + item.Name[:15] + " is listed as unavailable.")
+		return
 	}
 
-	//note: the first instance of `<span aria-hidden="true">$` seems to be the actual price of the item before tax, but this
-	//is entirely empiracally decided
-	//NEW IN USE: THIS IS BETTER??? <span class="a-offscreen">$
-	priceindex := strings.Index(respBodyString, `<span class="a-offscreen">$`)
+	//note: the first instance of `<span class="a-offscreen">$` seems to be the actual price of the item before tax, but this is entirely empiracally decided
+	priceIndex := strings.Index(respBodyString, PRICE_INDICATOR)
 
 	//now we need to get the number in this string right after the priceindex
 	//we know this number ends because the span is terminated with "<"
 	//also note `<span class="a-offscreen">$` is 27 chars long
 	flagLength := 27
 	var priceString string = ""
-	for respBodyString[priceindex+flagLength] != '<' {
-		priceString += string(respBodyString[priceindex+flagLength])
-		priceindex++
+	for respBodyString[priceIndex+flagLength] != '<' {
+		priceString += string(respBodyString[priceIndex+flagLength])
+		priceIndex++
 	}
-	fmt.Println("Attempting to parse" + priceString)
 	price, err := strconv.ParseFloat(priceString, 64)
-	fmt.Println("Got price of: " + fmt.Sprint(price))
 	if err != nil {
-		//fmt.Println("Cannot get price from: ", getUrl((*orderhist)[i].Name, (*orderhist)[i].Asin))
-		return errors.New("Cannot get price from: " + itemUrl + err.Error())
+		fmt.Println("Cannot get price from: " + itemUrl + err.Error())
+		return
 	}
 
 	//now lets actually modify our item
 	item.CurrentPrice = price
 	item.PriceDrop = math.Round((item.OriginalPrice-price)*100) / 100
-
-	//We could have only gotten here if there were no errors
-	return nil
 }
 
 func getUrl(name, asin string) string {
