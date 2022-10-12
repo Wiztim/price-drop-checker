@@ -8,7 +8,7 @@ function uploadCSVFile(event) {
     var fr = new FileReader();
     var info = "\"";
     fr.readAsText(file);
-    fr.onload = function (event) {
+    fr.onload = () => {
         info += fr.result;
         info += "\"";
         csvContents = info.replace(/[\r\n]/gm, '\\n');
@@ -17,7 +17,7 @@ function uploadCSVFile(event) {
             method: "POST",
             body: csvContents
         })
-            .then(response => { console.log(response); })
+            .then((response) => { console.log(response); })
             .catch(console.error);
 
     }
