@@ -117,7 +117,7 @@ func parseCSV(requestBody string) ([]OrderInfo, error) {
 	return orderHistory, nil
 }
 
-//validateCSV returns a csv reader of the string when the string is a proper CSV containing the headers we need.
+// validateCSV returns a csv reader of the string when the string is a proper CSV containing the headers we need.
 func validateCSV(requestBody string) (*csv.Reader, error) {
 	//we should not have received an empty request.
 	if len(requestBody) < 1 {
@@ -168,14 +168,15 @@ func isItemOrderedWithin30Days(orderDate string) (bool, error) {
 // populates currente price and price drop in orderHistory slice
 func getPriceInfo(orderHistory *[]OrderInfo) {
 	var wg sync.WaitGroup
-	for _, item := range *orderHistory {
+	for i := range *orderHistory {
 		//we are starting a new goroutine. We call Add(1) for the WaitGroup to track that there is an open thread
 		wg.Add(1)
-		go func() {
+		go func(test *OrderInfo) {
 			//decrement the weight group counter once getPriceInfoForItem completes
 			defer wg.Done()
-			getPriceInfoForItem(&item)
-		}()
+			getPriceInfoForItem(test)
+			//the parameter for this closure should be passed in, rather than capturing it in scope, as we do not want it changed outside of this function. If we simply capture the loop variable, the for loop will iterate the pointer.
+		}(&(*orderHistory)[i])
 	}
 	//wait for all threads to complete
 	wg.Wait()
@@ -186,7 +187,7 @@ func getPriceInfo(orderHistory *[]OrderInfo) {
 func getPriceInfoForItem(item *OrderInfo) {
 	//webscraping portion!
 	//we first generate the URL we need to GET
-	itemUrl := getUrl(item.Name, item.Asin)
+	itemUrl := getUrl(item.Asin)
 
 	//now let's actually GET the webpage
 	resp, err := http.Get(itemUrl)
@@ -219,7 +220,7 @@ func getPriceInfoForItem(item *OrderInfo) {
 	//this tag should only appear on unavailable items
 	if strings.Index(respBodyString, UNAVAILABLE_INDICATOR) != -1 {
 		//unavailable, so let's just skip this item
-		fmt.Println("The item " + item.Name[:15] + " is listed as unavailable.")
+		fmt.Println("The item " + item.Name + " is listed as unavailable.")
 		return
 	}
 
@@ -246,9 +247,9 @@ func getPriceInfoForItem(item *OrderInfo) {
 	item.PriceDrop = math.Round((item.OriginalPrice-price)*100) / 100
 }
 
-func getUrl(name, asin string) string {
+func getUrl(asin string) string {
 	//this structure is gotten from analyzing enough URLs, the name part can be literally anything, but this is what I chose
-	itemurl := "https://www.amazon.com/" + name[:15] + "/dp/" + asin + "/"
+	itemurl := "https://www.amazon.com/" + "dp/" + asin + "/"
 	return itemurl
 }
 
