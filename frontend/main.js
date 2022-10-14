@@ -6,20 +6,20 @@ function uploadCSVFile(event) {
     const file = document.getElementById("inpFile").files[0];
 
     var fr = new FileReader();
-    var info = "\"";
+    var info;
     fr.readAsText(file);
     fr.onload = () => {
-        info += fr.result;
-        info += "\"";
+        info = fr.result;
         csvContents = info.replace(/[\r\n]/gm, '\\n');
+        csvContents = csvContents.replace(/[\r"]/gm, '\\"');
+        csvContents = "\"" + csvContents + "\"";
         console.log(csvContents);
         fetch(endpoint, {
             method: "POST",
             body: csvContents
         })
-            .then((response) => { console.log(response); })
-            .catch(console.error);
-
+            .then((response) => response.json())
+            .then((data) => console.log(data));
     }
 }
 
