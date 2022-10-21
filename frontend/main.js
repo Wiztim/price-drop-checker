@@ -2,24 +2,65 @@ const endpoint = "https://www.wiztim.dev/refund";
 
 
 
-function uploadCSVFile(event) {
+function uploadCSVFile() {
     const file = document.getElementById("inpFile").files[0];
 
     var fr = new FileReader();
     var info;
+    var output;
     fr.readAsText(file);
     fr.onload = () => {
         info = fr.result;
         csvContents = info.replace(/[\r\n]/gm, '\\n');
         csvContents = csvContents.replace(/[\r"]/gm, '\\"');
         csvContents = "\"" + csvContents + "\"";
-        console.log(csvContents);
         fetch(endpoint, {
             method: "POST",
             body: csvContents
         })
             .then((response) => response.json())
-            .then((data) => console.log(data));
+            .then((data) => {
+                document.getElementById("upload").style.display = "none";
+                document.getElementById("csv").style.display = "block";
+                console.log(data);
+
+                const reduced = data.priceReduced;
+                const unchanged = data.priceUnchanged;
+                const increased = data.princeIncreased;
+                const unavailable = data.unavailable;
+                console.log(reduced);
+                console.log(unchanged);
+                console.log(increased);
+                console.log(unavailable);
+                if (reduced != null) {
+                    for (let i = 0; i < reduced.length; i++) {
+                        document.getElementById("reduced").innerHTML += reduced[i].name + "<br>";
+                    }
+                } else {
+                    document.getElementById("reduced").innerHTML += "Nothing"
+                }
+                if (unchanged != null) {
+                    for (let i = 0; i < unchanged.length; i++) {
+                        document.getElementById("unchanged").innerHTML += unchanged[i].name + "<br>";
+                    }
+                } else {
+                    document.getElementById("reduced").innerHTML += "Nothing"
+                }
+                if (increased != null) {
+                    for (let i = 0; i < increased.length; i++) {
+                        document.getElementById("increased").innerHTML += increased[i].name + "<br>";
+                    }
+                } else {
+                    document.getElementById("reduced").innerHTML += "Nothing"
+                }
+                if (unavailable != null) {
+                    for (let i = 0; i < unavailable.length; i++) {
+                        document.getElementById("unavailable").innerHTML += unavailable[i].name + "<br>";
+                    }
+                } else {
+                    document.getElementById("reduced").innerHTML += "Nothing"
+                }
+            });
     }
 }
 

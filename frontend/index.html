@@ -1,15 +1,37 @@
 <!DOCTYPE html>
 <html lang="en">
-    <head>
-        <meta charset="UTF-8" />
-        <script src="main.js"></script>
-    </head>
-    <body>
+
+<head>
+    <meta charset="UTF-8" />
+    <script src="main.js"></script>
+</head>
+
+<body>
+    <div id="upload">
         <h1>File Upload</h1>
         <form id="myForm">
             <input type="file" id=inpFile onchange="return fileValidation()"><br>
-            <button type="button" onclick={uploadCSVFile(event)}>Upload File</button>
+            <button type="button" onclick={uploadCSVFile()}>Upload File</button>
         </form>
-    </body>
+    </div>
+    <div id="csv" style="display: none;">
+        <h1>Reduced Price</h1>
+        <div id="reduced">
+
+        </div>
+        <h1>Unchanged Price</h1>
+        <div id="unchanged">
+
+        </div>
+        <h1>Increased Price</h1>
+        <div id="increased">
+
+        </div>
+        <h1>Unavailable/Failed to fetch</h1>
+        <div id="unavailable">
+
+        </div>
+    </div>
+</body>
 
 </html>
