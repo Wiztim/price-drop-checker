@@ -4,6 +4,10 @@ const endpoint = "https://www.wiztim.dev/refund";
 
 function uploadCSVFile() {
     const file = document.getElementById("inpFile").files[0];
+    if (file == null) {
+        alert("Please upload a file.");
+        return;
+    }
 
     var fr = new FileReader();
     var info;
@@ -33,29 +37,47 @@ function uploadCSVFile() {
                 console.log(increased);
                 console.log(unavailable);
                 if (reduced != null) {
+                    reducedHTML = document.getElementById("reduced");
                     for (let i = 0; i < reduced.length; i++) {
-                        document.getElementById("reduced").innerHTML += reduced[i].name + "<br>";
+                        product = reduced[i];
+                        reducedHTML.innerHTML += "<a href=\"https://www.amazon.com/dp/" + product.asin + "\"/>" + product.name + "</a><br>";
+                        reducedHTML.innerHTML += "Date Ordered: " + product.dateOrdered + "<br>";
+                        reducedHTML.innerHTML += "Original Price: $" + product.originalPrice + "<br>";
+                        reducedHTML.innerHTML += "Reduced Price: $" + product.currentPrice + "<hr>";
                     }
                 } else {
                     document.getElementById("reduced").innerHTML += "Nothing"
                 }
                 if (unchanged != null) {
+                    unchangedHTML = document.getElementById("unchanged");
                     for (let i = 0; i < unchanged.length; i++) {
-                        document.getElementById("unchanged").innerHTML += unchanged[i].name + "<br>";
+                        product = unchanged[i];
+                        unchangedHTML.innerHTML += "<a href=\"https://www.amazon.com/dp/" + product.asin + "\"/>" + product.name + "</a><br>";
+                        unchangedHTML.innerHTML += "Date Ordered: " + product.dateOrdered + "<br>";
+                        unchangedHTML.innerHTML += "Original Price: $" + product.originalPrice + "<hr>";
                     }
                 } else {
-                    document.getElementById("reduced").innerHTML += "Nothing"
+                    document.getElementById("unchanged").innerHTML += "Nothing"
                 }
                 if (increased != null) {
+                    increasedHTML = document.getElementById("increased");
                     for (let i = 0; i < increased.length; i++) {
-                        document.getElementById("increased").innerHTML += increased[i].name + "<br>";
+                        product = increased[i];
+                        increasedHTML.innerHTML += "<a href=\"https://www.amazon.com/dp/" + product.asin + "\"/>" + product.name + "</a><br>";
+                        increasedHTML.innerHTML += "Date Ordered: " + product.dateOrdered + "<br>";
+                        increasedHTML.innerHTML += "Original Price: $" + product.originalPrice + "<br>";
+                        increasedHTML.innerHTML += "Increased Price: $" + product.currentPrice + "<hr>";
                     }
                 } else {
-                    document.getElementById("reduced").innerHTML += "Nothing"
+                    document.getElementById("increased").innerHTML += "Nothing"
                 }
                 if (unavailable != null) {
+                    unavailableHTML = document.getElementById("unavailable");
                     for (let i = 0; i < unavailable.length; i++) {
-                        document.getElementById("unavailable").innerHTML += unavailable[i].name + "<br>";
+                        product = unavailable[i];
+                        unavailableHTML.innerHTML += "<a href=\"https://www.amazon.com/dp/" + product.asin + "\"/>" + product.name + "</a><br>";
+                        unavailableHTML.innerHTML += "Date Ordered: " + product.dateOrdered + "<br>";
+                        unavailableHTML.innerHTML += "Original Price: $" + product.originalPrice + "<hr>";
                     }
                 } else {
                     document.getElementById("reduced").innerHTML += "Nothing"

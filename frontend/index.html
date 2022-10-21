@@ -8,7 +8,16 @@
 
 <body>
     <div id="upload">
-        <h1>File Upload</h1>
+        <h1>Amazon Order History CSV Upload</h1>
+        <div>
+            Please do the following: <br>
+            <ol>
+                <li>Go Amazon's order history download page: <a href="https://www.amazon.com/b2b/reports">https://www.amazon.com/b2b/reports</a>.</li>
+                <li>Download an Items report in the last 30 days.</li>
+                <li>Choose the CSV.</li>
+                <li>Press upload and wait a moment.</li>
+        </ol>
+        </div>
         <form id="myForm">
             <input type="file" id=inpFile onchange="return fileValidation()"><br>
             <button type="button" onclick={uploadCSVFile()}>Upload File</button>
