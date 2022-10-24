@@ -1,15 +1,46 @@
 <!DOCTYPE html>
 <html lang="en">
-    <head>
-        <meta charset="UTF-8" />
-        <script src="main.js"></script>
-    </head>
-    <body>
-        <h1>File Upload</h1>
+
+<head>
+    <meta charset="UTF-8" />
+    <script src="main.js"></script>
+</head>
+
+<body>
+    <div id="upload">
+        <h1>Amazon Order History CSV Upload</h1>
+        <div>
+            Please do the following: <br>
+            <ol>
+                <li>Go Amazon's order history download page: <a href="https://www.amazon.com/b2b/reports">https://www.amazon.com/b2b/reports</a>.</li>
+                <li>Download an Items report in the last 30 days.</li>
+                <li>Choose the CSV.</li>
+                <li>Press upload and wait a moment.</li>
+        </ol>
+        </div>
         <form id="myForm">
             <input type="file" id=inpFile onchange="return fileValidation()"><br>
-            <button type="button" onclick={uploadCSVFile(event)}>Upload File</button>
+            <button type="button" onclick={uploadCSVFile()}>Upload File</button>
         </form>
-    </body>
+    </div>
+    <div id="csv" style="display: none;">
+        <h1>Reduced Price</h1>
+        <div id="reduced">
+
+        </div>
+        <h1>Unchanged Price</h1>
+        <div id="unchanged">
+
+        </div>
+        <h1>Increased Price</h1>
+        <div id="increased">
+
+        </div>
+        <h1>Unavailable/Failed to fetch</h1>
+        <div id="unavailable">
+
+        </div>
+    </div>
+</body>
 
 </html>
