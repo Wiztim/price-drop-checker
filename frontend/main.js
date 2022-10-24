@@ -33,7 +33,7 @@ function uploadCSVFile() {
                 // for each category of products, display them in a list
                 const reduced = data.priceReduced;
                 const unchanged = data.priceUnchanged;
-                const increased = data.princeIncreased;
+                const increased = data.priceIncreased;
                 const unavailable = data.unavailable;
 
                 if (reduced != null) {

@@ -19,7 +19,7 @@ import (
 type PriceChangeCategories struct {
 	PriceReduced   []OrderInfo `json:"priceReduced"`
 	PriceUnchanged []OrderInfo `json:"priceUnchanged"`
-	PriceIncreased []OrderInfo `json:"princeIncreased"`
+	PriceIncreased []OrderInfo `json:"priceIncreased"`
 	Unavailable    []OrderInfo `json:"unavailable"`
 }
 
