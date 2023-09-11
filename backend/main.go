@@ -6,14 +6,12 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"math/rand"
 	"net/http"
 	"sort"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
-
-	"github.com/aws/aws-lambda-go/lambda"
 )
 
 type PriceChangeCategories struct {
@@ -167,19 +165,14 @@ func isItemOrderedWithin30Days(orderDate string) (bool, error) {
 
 // populates currente price and price drop in orderHistory slice
 func getPriceInfo(orderHistory *[]OrderInfo) {
-	var wg sync.WaitGroup
+	r := rand.New(rand.NewSource(time.Now().UnixNano()))
+	x := 503
+	y := 502
 	for i := range *orderHistory {
-		//we are starting a new goroutine. We call Add(1) for the WaitGroup to track that there is an open thread
-		wg.Add(1)
-		go func(test *OrderInfo) {
-			//decrement the weight group counter once getPriceInfoForItem completes
-			defer wg.Done()
-			getPriceInfoForItem(test)
-			//the parameter for this closure should be passed in, rather than capturing it in scope, as we do not want it changed outside of this function. If we simply capture the loop variable, the for loop will iterate the pointer.
-		}(&(*orderHistory)[i])
+		randomNumber := (int(r.Uint32()) % x) + y
+		getPriceInfoForItem(&(*orderHistory)[i])
+		time.Sleep(time.Duration(randomNumber))
 	}
-	//wait for all threads to complete
-	wg.Wait()
 }
 
 // if there is an error, we will just return early.
@@ -189,8 +182,39 @@ func getPriceInfoForItem(item *OrderInfo) {
 	//we first generate the URL we need to GET
 	itemUrl := getUrl(item.Asin)
 
-	//now let's actually GET the webpage
-	resp, err := http.Get(itemUrl)
+	// Create a new GET request
+	req, err := http.NewRequest("GET", itemUrl, nil)
+	if err != nil {
+		fmt.Println("Error creating request:", err)
+		return
+	}
+
+	// Set the required headers
+	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7")
+	req.Header.Set("Accept-Encoding", "gzip, deflate, br")
+	req.Header.Set("Accept-Language", "en-US,en;q=0.9")
+	req.Header.Set("Cache-Control", "no-cache")
+	req.Header.Set("Pragma", "no-cache")
+	req.Header.Set("Sec-Ch-Ua", `"Chromium";v="116", "Not)A;Brand";v="24", "Google Chrome";v="116"`)
+	req.Header.Set("Sec-Ch-Ua-Mobile", "?0")
+	req.Header.Set("Sec-Ch-Ua-Platform", `"Windows"`)
+	req.Header.Set("Sec-Fetch-Dest", "document")
+	req.Header.Set("Sec-Fetch-Mode", "navigate")
+	req.Header.Set("Sec-Fetch-Site", "none")
+	req.Header.Set("Sec-Fetch-User", "?1")
+	req.Header.Set("Upgrade-Insecure-Requests", "1")
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 Safari/537.36")
+
+	// Send the request and get the response
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		fmt.Println("Error making request:", err)
+		return
+	}
+
+	// Process the response here
+	fmt.Println("Response status code:", resp.StatusCode)
+
 	if err != nil {
 		fmt.Println("getPriceInfoForItem: Cannot retrieve webpage for " + itemUrl + err.Error())
 		return
@@ -207,6 +231,7 @@ func getPriceInfoForItem(item *OrderInfo) {
 		return
 	}
 	respBodyString := string(body)
+	fmt.Println(body)
 	defer resp.Body.Close()
 
 	//We first check if we got served a captcha - the webpage will only have the following quote if the program was served a captcha
@@ -226,7 +251,7 @@ func getPriceInfoForItem(item *OrderInfo) {
 
 	//note: the first instance of `<span class="a-offscreen">$` seems to be the actual price of the item before tax, but this is entirely empiracally decided
 	priceIndex := strings.Index(respBodyString, PRICE_INDICATOR)
-
+	fmt.Println("priceIndex: " + strconv.Itoa(priceIndex))
 	//now we need to get the number in this string right after the priceindex
 	//we know this number ends because the span is terminated with "<"
 	//also note `<span class="a-offscreen">$` is 27 chars long
@@ -239,6 +264,8 @@ func getPriceInfoForItem(item *OrderInfo) {
 	price, err := strconv.ParseFloat(priceString, 64)
 	if err != nil {
 		fmt.Println("Cannot get price from: " + itemUrl + err.Error())
+
+		fmt.Println("price string: " + priceString)
 		return
 	}
 
@@ -280,7 +307,7 @@ func categorizeItems(orderHistory *[]OrderInfo) PriceChangeCategories {
 
 func main() {
 	//this is necessary for the Lambda instance
-	lambda.Start(Handler)
+	//lambda.Start(Handler)
 	//this is useful for local testing
-	//fmt.Println(Handler("Order Date,Order ID,Title,Category,ASIN/ISBN,UNSPSC Code,Website,Release Date,Condition,Seller,Seller Credentials,List Price Per Unit,Purchase Price Per Unit,Quantity,Payment Instrument Type,Purchase Order Number,PO Line Number,Ordering Customer Email,Shipment Date,Shipping Address Name,Shipping Address Street 1,Shipping Address Street 2,Shipping Address City,Shipping Address State,Shipping Address Zip,Order Status,Carrier Name & Tracking Number,Item Subtotal,Item Subtotal Tax,Item Total,Tax Exemption Applied,Tax Exemption Type,Exemption Opt-Out,Buyer Name,Currency,Group Name\n\n10/01/22,111-8005663-4090615,\"SKYN Original Condoms, 24 Count (Pack of 1)\",CONDOM,\"B004TTXA7I\",\"53131622\",Amazon.com,,new,Amazon.com,,$20.99,$11.17,1,\"Discover0179\",,,noreply@gmail.com,06/02/20,Noah Terminello,2235 MANDRILL AVE,,VENTURA,CA,93003-7014,Shipped,AMZN_US(TBA050996544001),$11.17,$0.87,$12.04,,,,Noah Terminello,USD,"))
+	fmt.Println(Handler("Order Date,Order ID,Title,Category,ASIN/ISBN,UNSPSC Code,Website,Release Date,Condition,Seller,Seller Credentials,List Price Per Unit,Purchase Price Per Unit,Quantity,Payment Instrument Type,Purchase Order Number,PO Line Number,Ordering Customer Email,Shipment Date,Shipping Address Name,Shipping Address Street 1,Shipping Address Street 2,Shipping Address City,Shipping Address State,Shipping Address Zip,Order Status,Carrier Name & Tracking Number,Item Subtotal,Item Subtotal Tax,Item Total,Tax Exemption Applied,Tax Exemption Type,Exemption Opt-Out,Buyer Name,Currency,Group Name\n\n10/01/22,111-8005663-4090615,\"SKYN Original Condoms, 24 Count (Pack of 1)\",CONDOM,\"B004TTXA7I\",\"53131622\",Amazon.com,,new,Amazon.com,,$20.99,$11.17,1,\"Discover0179\",,,noreply@gmail.com,06/02/20,Noah Terminello,2235 MANDRILL AVE,,VENTURA,CA,93003-7014,Shipped,AMZN_US(TBA050996544001),$11.17,$0.87,$12.04,,,,Noah Terminello,USD,"))
 }
