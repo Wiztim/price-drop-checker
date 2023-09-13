@@ -1,4 +1,4 @@
-const endpoint = "https://www.wiztim.dev/refund";
+const endpoint = "http://localhost:8080";
 
 
 
@@ -15,9 +15,10 @@ function uploadCSVFile() {
     fr.readAsText(file);
     fr.onload = () => {
         let csvContents = fr.result;
-        csvContents = csvContents.replace(/[\r\n]/gm, '\\n');
-        csvContents = csvContents.replace(/[\r"]/gm, '\\"');
-        csvContents = "\"" + csvContents + "\"";
+        // this if for lambda
+        //csvContents = csvContents.replace(/[\r\n]/gm, '\\n');
+        //csvContents = csvContents.replace(/[\r"]/gm, '\\"');
+        //csvContents = "\"" + csvContents + "\"";
 
         // create the API call, and display it when it is finished
         fetch(endpoint, {

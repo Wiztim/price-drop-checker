@@ -1,10 +1,13 @@
 package main
 
 import (
+	"compress/flate"
+	"compress/gzip"
 	"encoding/csv"
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"math"
 	"math/rand"
 	"net/http"
@@ -75,6 +78,7 @@ func parseCSV(requestBody string) ([]OrderInfo, error) {
 		return nil, err
 	}
 
+	fmt.Println(requestBody)
 	//create the return object to be filled
 	orderHistory := []OrderInfo{}
 
@@ -224,14 +228,30 @@ func getPriceInfoForItem(item *OrderInfo) {
 		return
 	}
 
-	//let's look at the HTML body of the response
-	body, err := io.ReadAll(resp.Body)
+	// Decompress the response body if it's compressed
+	var reader io.Reader
+	switch resp.Header.Get("Content-Encoding") {
+	case "gzip":
+		reader, err = gzip.NewReader(resp.Body)
+		if err != nil {
+			fmt.Println("Error creating gzip reader:", err)
+			return
+		}
+	case "deflate":
+		reader = flate.NewReader(resp.Body)
+	default:
+		reader = resp.Body
+	}
+
+	// Read the response body
+	body, err := io.ReadAll(reader)
 	if err != nil {
-		fmt.Println("getPriceInfoForItem: Cannot ready body of response from " + itemUrl + err.Error())
+		fmt.Println("getPriceInfoForItem: Cannot read body of response from", itemUrl, err.Error())
 		return
 	}
+
+	// Convert the body to a string
 	respBodyString := string(body)
-	fmt.Println(body)
 	defer resp.Body.Close()
 
 	//We first check if we got served a captcha - the webpage will only have the following quote if the program was served a captcha
@@ -251,7 +271,6 @@ func getPriceInfoForItem(item *OrderInfo) {
 
 	//note: the first instance of `<span class="a-offscreen">$` seems to be the actual price of the item before tax, but this is entirely empiracally decided
 	priceIndex := strings.Index(respBodyString, PRICE_INDICATOR)
-	fmt.Println("priceIndex: " + strconv.Itoa(priceIndex))
 	//now we need to get the number in this string right after the priceindex
 	//we know this number ends because the span is terminated with "<"
 	//also note `<span class="a-offscreen">$` is 27 chars long
@@ -264,8 +283,6 @@ func getPriceInfoForItem(item *OrderInfo) {
 	price, err := strconv.ParseFloat(priceString, 64)
 	if err != nil {
 		fmt.Println("Cannot get price from: " + itemUrl + err.Error())
-
-		fmt.Println("price string: " + priceString)
 		return
 	}
 
@@ -305,9 +322,26 @@ func categorizeItems(orderHistory *[]OrderInfo) PriceChangeCategories {
 	return categories
 }
 
+func handlePost(w http.ResponseWriter, r *http.Request) {
+	b, err := io.ReadAll(r.Body)
+	if err != nil {
+		panic(err)
+	}
+
+	//fmt.Printf("%s", string(b))
+	fmt.Println(Handler(string(b)))
+}
+
 func main() {
 	//this is necessary for the Lambda instance
 	//lambda.Start(Handler)
 	//this is useful for local testing
-	fmt.Println(Handler("Order Date,Order ID,Title,Category,ASIN/ISBN,UNSPSC Code,Website,Release Date,Condition,Seller,Seller Credentials,List Price Per Unit,Purchase Price Per Unit,Quantity,Payment Instrument Type,Purchase Order Number,PO Line Number,Ordering Customer Email,Shipment Date,Shipping Address Name,Shipping Address Street 1,Shipping Address Street 2,Shipping Address City,Shipping Address State,Shipping Address Zip,Order Status,Carrier Name & Tracking Number,Item Subtotal,Item Subtotal Tax,Item Total,Tax Exemption Applied,Tax Exemption Type,Exemption Opt-Out,Buyer Name,Currency,Group Name\n\n10/01/22,111-8005663-4090615,\"SKYN Original Condoms, 24 Count (Pack of 1)\",CONDOM,\"B004TTXA7I\",\"53131622\",Amazon.com,,new,Amazon.com,,$20.99,$11.17,1,\"Discover0179\",,,noreply@gmail.com,06/02/20,Noah Terminello,2235 MANDRILL AVE,,VENTURA,CA,93003-7014,Shipped,AMZN_US(TBA050996544001),$11.17,$0.87,$12.04,,,,Noah Terminello,USD,"))
+	//fmt.Println(Handler("Order Date,Order ID,Title,Category,ASIN/ISBN,UNSPSC Code,Website,Release Date,Condition,Seller,Seller Credentials,List Price Per Unit,Purchase Price Per Unit,Quantity,Payment Instrument Type,Purchase Order Number,PO Line Number,Ordering Customer Email,Shipment Date,Shipping Address Name,Shipping Address Street 1,Shipping Address Street 2,Shipping Address City,Shipping Address State,Shipping Address Zip,Order Status,Carrier Name & Tracking Number,Item Subtotal,Item Subtotal Tax,Item Total,Tax Exemption Applied,Tax Exemption Type,Exemption Opt-Out,Buyer Name,Currency,Group Name\n\n10/01/22,111-8005663-4090615,\"SKYN Original Condoms, 24 Count (Pack of 1)\",CONDOM,\"B004TTXA7I\",\"53131622\",Amazon.com,,new,Amazon.com,,$20.99,$11.17,1,\"Discover0179\",,,noreply@gmail.com,06/02/20,Noah Terminello,2235 MANDRILL AVE,,VENTURA,CA,93003-7014,Shipped,AMZN_US(TBA050996544001),$11.17,$0.87,$12.04,,,,Noah Terminello,USD,"))
+
+	http.HandleFunc("/", handlePost)
+
+	fmt.Printf("Starting server for testing HTTP POST...\n")
+	if err := http.ListenAndServe(":8080", nil); err != nil {
+		log.Fatal(err)
+	}
 }
