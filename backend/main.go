@@ -4,10 +4,10 @@ import (
 	"compress/flate"
 	"compress/gzip"
 	"encoding/csv"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"math"
 	"math/rand"
 	"net/http"
@@ -15,6 +15,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/rs/cors"
 )
 
 type PriceChangeCategories struct {
@@ -78,7 +80,6 @@ func parseCSV(requestBody string) ([]OrderInfo, error) {
 		return nil, err
 	}
 
-	fmt.Println(requestBody)
 	//create the return object to be filled
 	orderHistory := []OrderInfo{}
 
@@ -198,7 +199,6 @@ func getPriceInfoForItem(item *OrderInfo) {
 	req.Header.Set("Accept-Encoding", "gzip, deflate, br")
 	req.Header.Set("Accept-Language", "en-US,en;q=0.9")
 	req.Header.Set("Cache-Control", "no-cache")
-	req.Header.Set("Pragma", "no-cache")
 	req.Header.Set("Sec-Ch-Ua", `"Chromium";v="116", "Not)A;Brand";v="24", "Google Chrome";v="116"`)
 	req.Header.Set("Sec-Ch-Ua-Mobile", "?0")
 	req.Header.Set("Sec-Ch-Ua-Platform", `"Windows"`)
@@ -328,8 +328,23 @@ func handlePost(w http.ResponseWriter, r *http.Request) {
 		panic(err)
 	}
 
-	//fmt.Printf("%s", string(b))
-	fmt.Println(Handler(string(b)))
+	//fmt.Println(Handler(string(b)))
+	resp, err := Handler((string(b)))
+	if err != nil {
+		fmt.Println("Error sending request to server")
+		return
+	}
+
+	fmt.Println(resp)
+	responseJSON, err := json.Marshal(resp)
+	if err != nil {
+		http.Error(w, "Failed to marshal JSON", http.StatusInternalServerError)
+		return
+	}
+	//w.WriteHeader(http.StatusOK)
+	w.Header().Set("Content-Type", "application/json")
+
+	w.Write(responseJSON)
 }
 
 func main() {
@@ -338,10 +353,28 @@ func main() {
 	//this is useful for local testing
 	//fmt.Println(Handler("Order Date,Order ID,Title,Category,ASIN/ISBN,UNSPSC Code,Website,Release Date,Condition,Seller,Seller Credentials,List Price Per Unit,Purchase Price Per Unit,Quantity,Payment Instrument Type,Purchase Order Number,PO Line Number,Ordering Customer Email,Shipment Date,Shipping Address Name,Shipping Address Street 1,Shipping Address Street 2,Shipping Address City,Shipping Address State,Shipping Address Zip,Order Status,Carrier Name & Tracking Number,Item Subtotal,Item Subtotal Tax,Item Total,Tax Exemption Applied,Tax Exemption Type,Exemption Opt-Out,Buyer Name,Currency,Group Name\n\n10/01/22,111-8005663-4090615,\"SKYN Original Condoms, 24 Count (Pack of 1)\",CONDOM,\"B004TTXA7I\",\"53131622\",Amazon.com,,new,Amazon.com,,$20.99,$11.17,1,\"Discover0179\",,,noreply@gmail.com,06/02/20,Noah Terminello,2235 MANDRILL AVE,,VENTURA,CA,93003-7014,Shipped,AMZN_US(TBA050996544001),$11.17,$0.87,$12.04,,,,Noah Terminello,USD,"))
 
-	http.HandleFunc("/", handlePost)
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", handlePost)
 
-	fmt.Printf("Starting server for testing HTTP POST...\n")
-	if err := http.ListenAndServe(":8080", nil); err != nil {
-		log.Fatal(err)
-	}
+	// Create a CORS handler with the desired CORS options
+	c := cors.New(cors.Options{
+		AllowedOrigins: []string{"*"}, // Replace with your frontend URL
+		AllowedMethods: []string{"POST"},
+	})
+
+	// Use the CORS middleware with your HTTP server
+	handler := c.Handler(mux)
+
+	//http.HandleFunc("/post", handlePost)
+	/*
+		http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("static"))))
+
+		// Serve the main HTML page
+		http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+			http.ServeFile(w, r, "static/index.html")
+		})
+	*/
+	// Start the server on port 8080
+	http.ListenAndServe(":8080", handler)
+
 }
