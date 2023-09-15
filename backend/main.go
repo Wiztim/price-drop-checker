@@ -39,10 +39,10 @@ type OrderInfo struct {
 }
 
 const (
-	NAME_COLUMN           = 2
-	DATE_ORDERED_COLUMN   = 0
-	ASIN_COLUMN           = 4
-	ORIGINAL_PRICE_COLUMN = 12
+	NAME_COLUMN           = 3
+	DATE_ORDERED_COLUMN   = 1
+	ASIN_COLUMN           = 5
+	ORIGINAL_PRICE_COLUMN = 4
 	CAPTCHA_INDICATOR     = `For information about migrating to our APIs refer to our Marketplace APIs at https://developer.amazonservices.com/ref=rm_c_sv, or our Product Advertising API at https://affiliate-program.amazon.com/gp/advertising/api/detail/main.html/ref=rm_c_ac for advertising use cases.`
 	UNAVAILABLE_INDICATOR = `<span class="a-color-price a-text-bold">Currently unavailable.</span>`
 	PRICE_INDICATOR       = `<span class="a-offscreen">$`
@@ -138,8 +138,8 @@ func validateCSV(requestBody string) (*csv.Reader, error) {
 	if err != nil {
 		return nil, errors.New("validateCSV: could not read first" + err.Error())
 	}
-	if csvHeaders[NAME_COLUMN] != "Title" || csvHeaders[DATE_ORDERED_COLUMN] != "Order Date" || csvHeaders[ASIN_COLUMN] != "ASIN/ISBN" || csvHeaders[ORIGINAL_PRICE_COLUMN] != "Purchase Price Per Unit" {
-		return nil, errors.New(`validateCSV: Missing "Title", "Date Ordered", "ASIN/ISBN", or "Purchase Price Per Unit" fields in CSV`)
+	if csvHeaders[NAME_COLUMN] != "description" || csvHeaders[DATE_ORDERED_COLUMN] != "order date" || csvHeaders[ASIN_COLUMN] != "ASIN" || csvHeaders[ORIGINAL_PRICE_COLUMN] != "price" {
+		return nil, errors.New(`validateCSV: Missing "description", "Date Ordered", "ASIN", or "price" fields in CSV`)
 	}
 	return csvReader, nil
 }
@@ -199,6 +199,7 @@ func getPriceInfoForItem(item *OrderInfo) {
 	req.Header.Set("Accept-Encoding", "gzip, deflate, br")
 	req.Header.Set("Accept-Language", "en-US,en;q=0.9")
 	req.Header.Set("Cache-Control", "no-cache")
+	//req.Header.Set("Cookie", "TODO: use env variable")
 	req.Header.Set("Sec-Ch-Ua", `"Chromium";v="116", "Not)A;Brand";v="24", "Google Chrome";v="116"`)
 	req.Header.Set("Sec-Ch-Ua-Mobile", "?0")
 	req.Header.Set("Sec-Ch-Ua-Platform", `"Windows"`)

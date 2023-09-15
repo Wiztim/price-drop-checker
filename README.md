@@ -1,8 +1,7 @@
-Try it here: [http://refund.wiztim.dev.s3-website-us-east-1.amazonaws.com/](http://refund.wiztim.dev.s3-website-us-east-1.amazonaws.com/)
-
 # Known Issue
 
-Amazon throttles calls to it's sites without using an API, resulting in many unavailable items.
+- Amazon throttles calls to it's sites without using an API, resulting in many unavailable items. Unimplemented fix: use cookie header
+- Currently self hosts the go code
 
 # Price Drop Checker
 
@@ -12,8 +11,10 @@ Amazon throttles calls to it's sites without using an API, resulting in many una
 
 # Usage
 
-- Get Amazon order history CSV
-- Upload the CSV
+- Install the [Amazon Order History Reporter](https://chrome.google.com/webstore/detail/amazon-order-history-repo/mgkilgclilajckgnedgjgnfdokkgnibi) google extension
+- Uncheck all boxes except
+    - Show items not orders
+    - Show ASIN in items view
 - Recieve a list of items with their current price V.S. original price
 
 # Frontend details
