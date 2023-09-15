@@ -1,4 +1,4 @@
-const endpoint = "https://www.wiztim.dev/refund";
+const endpoint = "http://localhost:8080/";
 
 
 
@@ -15,9 +15,10 @@ function uploadCSVFile() {
     fr.readAsText(file);
     fr.onload = () => {
         let csvContents = fr.result;
-        csvContents = csvContents.replace(/[\r\n]/gm, '\\n');
-        csvContents = csvContents.replace(/[\r"]/gm, '\\"');
-        csvContents = "\"" + csvContents + "\"";
+        // this if for lambda
+        //csvContents = csvContents.replace(/[\r\n]/gm, '\\n');
+        //csvContents = csvContents.replace(/[\r"]/gm, '\\"');
+        //csvContents = "\"" + csvContents + "\"";
 
         // create the API call, and display it when it is finished
         fetch(endpoint, {
@@ -36,8 +37,11 @@ function uploadCSVFile() {
                 const increased = data.priceIncreased;
                 const unavailable = data.unavailable;
 
+                var reducedHTML = document.getElementById("reduced");
+                var unchangedHTML = document.getElementById("unchanged");
+                var increasedHTML = document.getElementById("increased");
+                var unavailableHTML = document.getElementById("unavailable");
                 if (reduced != null) {
-                    var reducedHTML = document.getElementById("reduced");
                     for (let i = 0; i < reduced.length; i++) {
                         let product = reduced[i];
                         reducedHTML.innerHTML += "<a href=\"https://www.amazon.com/dp/" + product.asin + "\"/>" + product.name + "</a><br>";
@@ -49,7 +53,6 @@ function uploadCSVFile() {
                     reducedHTML.innerHTML += "Nothing"
                 }
                 if (unchanged != null) {
-                    var unchangedHTML = document.getElementById("unchanged");
                     for (let i = 0; i < unchanged.length; i++) {
                         let product = unchanged[i];
                         unchangedHTML.innerHTML += "<a href=\"https://www.amazon.com/dp/" + product.asin + "\"/>" + product.name + "</a><br>";
@@ -60,7 +63,6 @@ function uploadCSVFile() {
                     unchangedHTML.innerHTML += "Nothing"
                 }
                 if (increased != null) {
-                    var increasedHTML = document.getElementById("increased");
                     for (let i = 0; i < increased.length; i++) {
                         let product = increased[i];
                         increasedHTML.innerHTML += "<a href=\"https://www.amazon.com/dp/" + product.asin + "\"/>" + product.name + "</a><br>";
@@ -72,7 +74,6 @@ function uploadCSVFile() {
                     increasedHTML.innerHTML += "Nothing"
                 }
                 if (unavailable != null) {
-                    var unavailableHTML = document.getElementById("unavailable");
                     for (let i = 0; i < unavailable.length; i++) {
                         let product = unavailable[i];
                         unavailableHTML.innerHTML += "<a href=\"https://www.amazon.com/dp/" + product.asin + "\"/>" + product.name + "</a><br>";
